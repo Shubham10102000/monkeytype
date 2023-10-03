@@ -38,6 +38,7 @@ let dontInsertSpace = false;
 let correctShiftUsed = true;
 let isKoCompiling = false;
 let isBackspace: boolean;
+let incorrectShiftsInARow = 0;
 
 const wordsInput = document.getElementById("wordsInput") as HTMLInputElement;
 const koInputVisual = document.getElementById("koInputVisual") as HTMLElement;
@@ -215,7 +216,7 @@ function handleSpace(): void {
     }
   } else {
     if (!nospace) {
-      if (!Config.playSoundOnError || Config.blindMode) {
+      if (Config.playSoundOnError === "off" || Config.blindMode) {
         Sound.playClick();
       } else {
         Sound.playError();
@@ -549,7 +550,7 @@ function handleChar(
   if (thisCharCorrect) {
     Sound.playClick();
   } else {
-    if (!Config.playSoundOnError || Config.blindMode) {
+    if (Config.playSoundOnError === "off" || Config.blindMode) {
       Sound.playClick();
     } else {
       Sound.playError();
@@ -561,7 +562,19 @@ function handleChar(
     KeymapEvent.flash(char, thisCharCorrect);
   }
 
-  if (!correctShiftUsed && Config.difficulty !== "master") return;
+  if (Config.difficulty !== "master") {
+    if (!correctShiftUsed) {
+      incorrectShiftsInARow++;
+      if (incorrectShiftsInARow >= 5) {
+        Notifications.add("Reminder: Opposite shift mode is on.", 0, {
+          important: true,
+        });
+      }
+      return;
+    } else {
+      incorrectShiftsInARow = 0;
+    }
+  }
 
   //update current corrected version. if its empty then add the current char. if its not then replace the last character with the currently pressed one / add it
   if (TestInput.corrected.current === "") {
@@ -618,9 +631,11 @@ function handleChar(
   if (
     (Config.mode === "zen" && charIndex < 30) ||
     (Config.mode !== "zen" &&
-      charIndex < TestWords.words.getCurrent().length + 20)
+      resultingWord.length < TestWords.words.getCurrent().length + 20)
   ) {
     TestInput.input.current = resultingWord;
+  } else {
+    console.error("Hitting word limit");
   }
 
   if (!thisCharCorrect && Config.difficulty === "master") {
@@ -805,7 +820,7 @@ function handleTab(event: JQuery.KeyDownEvent, popupVisible: boolean): void {
 
 let lastBailoutAttempt = -1;
 
-$(document).keydown(async (event) => {
+$(document).on("keydown", async (event) => {
   if (ActivePage.get() === "loading") return;
 
   if (IgnoredKeys.includes(event.key)) return;
@@ -989,7 +1004,9 @@ $(document).keydown(async (event) => {
     (f) => f.functions?.preventDefaultEvent
   );
   if (funbox?.functions?.preventDefaultEvent) {
-    if (await funbox.functions.preventDefaultEvent(event)) {
+    if (
+      await funbox.functions.preventDefaultEvent(event as JQuery.KeyDownEvent)
+    ) {
       event.preventDefault();
       handleChar(event.key, TestInput.input.current.length);
       updateUI();
@@ -1022,7 +1039,7 @@ $(document).keydown(async (event) => {
   isBackspace = event.key === "Backspace" || event.key === "delete";
 });
 
-$("#wordsInput").keydown((event) => {
+$("#wordsInput").on("keydown", (event) => {
   if (event.originalEvent?.repeat) {
     console.log(
       "spacing debug keydown STOPPED - repeat",
@@ -1051,7 +1068,7 @@ $("#wordsInput").keydown((event) => {
   }, 0);
 });
 
-$("#wordsInput").keyup((event) => {
+$("#wordsInput").on("keyup", (event) => {
   if (event.originalEvent?.repeat) {
     console.log(
       "spacing debug keydown STOPPED - repeat",
@@ -1080,7 +1097,7 @@ $("#wordsInput").keyup((event) => {
   }, 0);
 });
 
-$("#wordsInput").keyup((event) => {
+$("#wordsInput").on("keyup", (event) => {
   if (!event.originalEvent?.isTrusted || TestUI.testRestarting) {
     event.preventDefault();
     return;
@@ -1106,7 +1123,10 @@ $("#wordsInput").on("input", (event) => {
   }
 
   const popupVisible = Misc.isAnyPopupVisible();
-  if (popupVisible) return;
+  if (popupVisible) {
+    event.preventDefault();
+    return;
+  }
 
   TestInput.setCurrentNotAfk();
 
@@ -1246,6 +1266,16 @@ $("#wordsInput").on("focus", (event) => {
 
 $("#wordsInput").on("copy paste", (event) => {
   event.preventDefault();
+});
+
+$("#wordsInput").on("select selectstart", (event) => {
+  event.preventDefault();
+});
+
+$("#wordsInput").on("keydown", (event) => {
+  if (event.key.startsWith("Arrow")) {
+    event.preventDefault();
+  }
 });
 
 // Composing events
